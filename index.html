@@ -49,6 +49,7 @@ button{font:inherit;color:inherit}
 .top{display:flex;flex-direction:column;gap:14px}
 .eyebrow{margin:0;font:800 12px/1.2 var(--f-body);letter-spacing:.12em;text-transform:uppercase;color:var(--pink)}
 h1{margin:2px 0 0;font:700 40px/1 var(--f-display);letter-spacing:-.01em}
+.tagline{margin:8px 0 0;font:600 15px/1.35 var(--f-body);color:var(--ink-2)}
 .steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
 .step{appearance:none;border:0;background:none;padding:0;display:flex;flex-direction:column;gap:6px;text-align:left;cursor:pointer;color:var(--ink-3);font:700 13px/1.2 var(--f-body)}
 .step::before{content:"";height:4px;border-radius:2px;background:var(--line)}
@@ -216,6 +217,7 @@ textarea{font:500 13px/1.4 var(--f-code);color:var(--ink);background:var(--surfa
   <header class="top">
     <div>
       <h1>Let's FaceTime</h1>
+      <p class="tagline">Finds the best time we're both free.</p>
     </div>
     <nav class="steps" aria-label="Steps">
       <button class="step" type="button" data-go="1">1 · You</button>
