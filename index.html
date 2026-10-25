@@ -88,6 +88,8 @@ h2{margin:0;font:600 26px/1.1 var(--f-display)}
 .saved{font-size:13px;color:var(--ink-3);text-align:center;min-height:1.2em}
 .note{margin:0;font-size:14px;color:var(--ink-2)}
 .warn{background:var(--maybe-soft);color:var(--maybe-ink);border-radius:12px;padding:10px 14px;font-size:14px;font-weight:500}
+.warn small{display:block;font-size:12px;opacity:.8;margin-top:3px}
+.tip{margin:0;background:var(--accent-soft);color:var(--ink);border-radius:12px;padding:10px 14px;font-size:14px;font-weight:600}
 
 /* Marking grid */
 .seg{display:inline-flex;flex-wrap:wrap;gap:2px;padding:3px;background:var(--sunk);border:1px solid var(--line);border-radius:999px}
@@ -112,6 +114,7 @@ h2{margin:0;font:600 26px/1.1 var(--f-display)}
 .dh-dow{font:800 10px/1 var(--f-body);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
 .dh-num{font:600 18px/1 var(--f-display);font-variant-numeric:tabular-nums}
 .dh-z{font:800 9px/1 var(--f-body);padding:3px 4px;border-radius:4px;background:var(--sunk);color:var(--ink-2);margin-top:3px}
+.dh-z::after{content:" \25BE"}
 .dayhead.over .dh-z{background:var(--accent);color:var(--on-accent)}
 .dayhead.today .dh-num{color:var(--accent)}
 .hlabel{font:700 10px/24px var(--f-body);color:var(--ink-3);text-align:right;padding-right:4px;font-variant-numeric:tabular-nums;white-space:nowrap}
@@ -243,6 +246,7 @@ textarea{font:500 13px/1.4 var(--f-code);color:var(--ink);background:var(--surfa
   <section class="screen" id="s2" aria-labelledby="s2t" hidden>
     <h2 id="s2t">When are you free?</h2>
     <p class="sub" id="s2sub"></p>
+    <p class="tip">✈️ Somewhere else on some days? Tap a date at the top to change where you are that day.</p>
     <div class="warn" id="warn2" hidden></div>
     <div>
       <div class="stick">
@@ -326,13 +330,14 @@ textarea{font:500 13px/1.4 var(--f-code);color:var(--ink);background:var(--surfa
 (function(){
 'use strict';
 
-/* ---------- Zones and time math (none of the three zones use daylight saving) ---------- */
+/* ---------- Zones and time math. off = standard UTC offset; dst:'us' follows US daylight saving ---------- */
 var ZONES={
   TH:{code:'TH',name:'Thailand',city:'Bangkok',off:7},
   PH:{code:'PH',name:'Philippines',city:'Manila',off:8},
-  HI:{code:'HI',name:'Hawaii',city:'Honolulu',off:-10}
+  HI:{code:'HI',name:'Hawaii',city:'Honolulu',off:-10},
+  SF:{code:'SF',name:'California',city:'San Francisco',off:-8,dst:'us'}
 };
-var ZK=['TH','PH','HI'];
+var ZK=['TH','PH','HI','SF'];
 var NAMES={anya:'Anya',mickey:'Mickey'};
 var IDS=['anya','mickey'];
 var DEFAULT_TZ={anya:'TH',mickey:'HI'};
@@ -347,8 +352,12 @@ function pad(n){return String(n).padStart(2,'0')}
 function parseKey(k){var a=k.split('-').map(Number);return Date.UTC(a[0],a[1]-1,a[2])}
 function keyOf(ms){return new Date(ms).toISOString().slice(0,10)}
 function addDays(k,n){return keyOf(parseKey(k)+n*DAY)}
-function utcOf(k,h,z){return parseKey(k)+h*HR-ZONES[z].off*HR}
-function loc(ms,z){var d=new Date(ms+ZONES[z].off*HR);return {key:d.toISOString().slice(0,10),h:d.getUTCHours(),m:d.getUTCMinutes(),dow:d.getUTCDay()}}
+/* US daylight saving: 2 AM on the 2nd Sunday of March until 2 AM on the 1st Sunday of November, local time */
+function nthSun(y,mo,n){var w=new Date(Date.UTC(y,mo,1)).getUTCDay();return (7-w)%7+1+(n-1)*7}
+function usDst(ms,std){var y=new Date(ms).getUTCFullYear();return ms>=Date.UTC(y,2,nthSun(y,2,2),2-std)&&ms<Date.UTC(y,10,nthSun(y,10,1),1-std)}
+function offAt(z,ms){var Z=ZONES[z];return Z.dst&&usDst(ms,Z.off)?Z.off+1:Z.off}
+function utcOf(k,h,z){var w=parseKey(k)+h*HR;return w-offAt(z,w-ZONES[z].off*HR)*HR}
+function loc(ms,z){var d=new Date(ms+offAt(z,ms)*HR);return {key:d.toISOString().slice(0,10),h:d.getUTCHours(),m:d.getUTCMinutes(),dow:d.getUTCDay()}}
 function todayIn(z){return loc(Date.now(),z).key}
 function deviceToday(){var n=new Date();return keyOf(n.getTime()-n.getTimezoneOffset()*60000)}
 function fmtDay(k){var d=new Date(parseKey(k));return DOW[d.getUTCDay()]+' '+d.getUTCDate()+' '+MON[d.getUTCMonth()]}
@@ -474,7 +483,7 @@ function onWriteError(e,id){
   if(code==='permission-denied'||code==='invalid_argument'||code==='not_granted'||code==='revoked'){
     if(S.remote[id])S.local[id]=clone(S.remote[id]);
     dirty.forEach(function(d){if(S.remote[d])S.local[d]=clone(S.remote[d])});dirty.clear();
-    saveLocal();S.mode='readonly';setSaved('local');render();
+    S.syncErr=code;saveLocal();S.mode='readonly';setSaved('local');render();
   }else{dirty.add(id);setSaved('error');setTimeout(flush,5000)}
 }
 
@@ -532,7 +541,7 @@ async function initSync(){
     db=app.firestore();
     S.mode='live';
     IDS.forEach(function(id){db.doc('people/'+id).onSnapshot(function(d){onPersonDoc(id,d)},onSubErr)});
-  }catch(e){S.mode='local';S.loaded=true}
+  }catch(e){S.mode='local';S.loaded=true;S.syncErr='could not load Firebase'}
   render();
 }
 var gotDoc={};
@@ -552,7 +561,7 @@ function onPeople(snap){
   }
   S.remote=next;S.loaded=true;safeRender();
 }
-function onSubErr(){if(S.mode==='live'||S.mode==='readonly'){S.mode='local';S.loaded=true;render()}}
+function onSubErr(e){S.syncErr=(e&&(e.code||e.message))||'connection error';if(S.mode==='live'||S.mode==='readonly'){S.mode='local';S.loaded=true;render()}}
 
 /* ---------- Matching ---------- */
 function personMap(p){
@@ -650,9 +659,9 @@ function confirmS1(){
 function renderS2(){
   if(!S.who)return;
   var p=viewP(S.who);var o=viewP(other(S.who));
-  $('#s2sub').textContent=ZONES[p.tz].city+' time. Tap a slot, or hold and drag. Somewhere else on a day? Tap the date.';
+  $('#s2sub').textContent=ZONES[p.tz].city+' time. Tap a slot, or hold and drag.';
   var w=$('#warn2');w.hidden=S.mode==='live'||isLoading();
-  w.textContent='Saving on this phone only. When done, send your code from "Times not syncing?" on the next screen.';
+  fill('#warn2',['Not connected, so your times only save on this phone.',h('small',null,'Reason: '+(S.syncErr||'sync is off'))]);
   Array.prototype.forEach.call(document.querySelectorAll('#brushSeg button'),function(b){b.setAttribute('aria-pressed',String(b.dataset.brush===S.brush))});
 
   var dates=rangeDates(p);var pages=Math.ceil(dates.length/7);
